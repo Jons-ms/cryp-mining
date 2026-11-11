@@ -1,0 +1,12 @@
+{
+  "name": "cryp-mining",
+  "version": "0.1.0",
+  "description": "CRYP Mining — онлайн-вебгра, перша версія (сервер контролює всю економіку)",
+  "private": true,
+  "type": "commonjs",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test \"test/*.test.js\""
+  }
+}
