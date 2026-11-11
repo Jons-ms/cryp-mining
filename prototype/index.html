@@ -1,0 +1,766 @@
+<title>CRYP Mining</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&display=swap" rel="stylesheet">
+<style>
+/* Layout: one-column phone app. HUD on top, scrolling content, tab bar at the bottom.
+   The 4x4 pixel rack is the hero of the Farm tab. One deliberate dark look (arcade terminal). */
+:root {
+  --bg: #0a0e13;
+  --panel: #121920;
+  --panel-2: #19222c;
+  --line: #2a3744;
+  --fg: #e4ecf3;
+  --muted: #8798a9;
+  --accent: #4ad0ff;
+  --accent-ink: #04202b;
+  --gold: #ffd04a;
+  --gain: #5be28a;
+  --loss: #ff6b6b;
+  --shadow: #05080b;
+  --f-display: 'Silkscreen', 'Courier New', monospace;
+  --f-body: 'VT323', ui-monospace, 'Courier New', monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 20px/1.25 var(--f-body); -webkit-tap-highlight-color: transparent; }
+button, input { font: inherit; color: inherit; }
+h2 { margin: 0; font: 700 14px/1.3 var(--f-display); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); text-wrap: balance; }
+h3 { margin: 0; font: 400 10px/1.3 var(--f-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.err { color: var(--loss); min-height: 1.25em; }
+
+#app {
+  height: 100%; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* HUD */
+.hud { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; gap: 10px; align-items: center; padding-block: 10px; border-bottom: 2px solid var(--line); }
+.hud .cell { min-width: 0; display: flex; flex-direction: column; }
+.hud .lbl { font: 400 9px/1.2 var(--f-display); color: var(--muted); letter-spacing: .08em; }
+.hud .val { font-size: clamp(20px, 6vw, 28px); line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud .money { color: var(--gain); }
+.hud .coin { color: var(--gold); }
+.rate { font: 400 9px/1.5 var(--f-display); padding: 6px 8px; border: 2px solid var(--line); background: var(--panel-2); text-align: right; white-space: nowrap; }
+.rate.up { color: var(--gain); }
+.rate.down { color: var(--loss); }
+
+main { flex: 1; min-height: 0; overflow-y: auto; padding-block: 14px; display: flex; flex-direction: column; gap: 14px; }
+.panel { background: var(--panel); border: 2px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.grow { flex: 1; }
+
+.btn { font: 400 11px/1.2 var(--f-display); letter-spacing: .05em; text-transform: uppercase; min-height: 46px; padding: 12px 14px; background: var(--panel-2); border: 2px solid var(--line); box-shadow: 0 3px 0 var(--shadow); cursor: pointer; }
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--shadow); }
+.btn.primary { background: var(--accent); border-color: #1e8db3; color: var(--accent-ink); }
+.btn.go { background: var(--gain); border-color: #2f9c57; color: #06260f; }
+.btn.stop { background: var(--loss); border-color: #b04444; color: #2b0707; }
+.btn.gold { background: var(--gold); border-color: #b08e1d; color: #2b2204; }
+.btn:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; transform: none; }
+.btn.wide { width: 100%; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.field { width: 100%; min-height: 48px; padding: 10px 12px; font-size: 24px; background: #070a0e; border: 2px solid var(--line); }
+.field:focus { outline: none; border-color: var(--accent); }
+
+/* Farm */
+.rack { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 8px; background: #070a0e; border: 2px solid var(--line); }
+.slot { position: relative; aspect-ratio: 1; padding: 0; background: var(--panel-2); border: 2px solid var(--line); cursor: pointer; }
+.slot canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.slot .idx { position: absolute; left: 4px; top: 1px; font-size: 15px; color: var(--muted); }
+.slot.empty::after { content: '+'; position: absolute; inset: 0; display: grid; place-items: center; font-size: 36px; color: var(--line); }
+.slot.on { border-color: #2f6f4a; }
+.slot.target { border-color: var(--gold); }
+.slot.picked { border-color: var(--accent); }
+.state { font: 700 11px/1 var(--f-display); letter-spacing: .06em; }
+.state.on { color: var(--gain); }
+.state.off { color: var(--muted); }
+.inv { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.inv-item { padding: 8px; text-align: center; background: var(--panel-2); border: 2px solid var(--line); }
+.inv-item canvas { width: 56px; height: 56px; image-rendering: pixelated; }
+
+/* Shop */
+.item { display: grid; grid-template-columns: 72px minmax(0,1fr); gap: 12px; align-items: center; }
+.item canvas { width: 72px; height: 72px; background: var(--panel-2); border: 2px solid var(--line); image-rendering: pixelated; }
+.item .name { font: 700 13px/1.3 var(--f-display); }
+.item .actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+.item .actions .btn { flex: 1; }
+
+/* Exchange */
+.big { font-size: 44px; line-height: 1; }
+.chart { position: relative; height: 200px; background: #070a0e; border: 2px solid var(--line); }
+.chart canvas { display: block; width: 100%; height: 100%; }
+.seg { display: flex; }
+.seg .btn { box-shadow: none; padding-inline: 12px; }
+.seg .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: #1e8db3; }
+
+/* Podium */
+.table { display: flex; flex-direction: column; gap: 6px; }
+.tr { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; gap: 8px; align-items: center; width: 100%; padding: 8px; text-align: left; background: var(--panel-2); border: 2px solid var(--line); cursor: pointer; }
+.tr .rk { font: 700 13px/1 var(--f-display); color: var(--muted); }
+.tr.r1 .rk { color: var(--gold); }
+.tr.r2 .rk { color: #cdd8e2; }
+.tr.r3 .rk { color: #d79c6b; }
+.tr.me { border-color: var(--accent); }
+.tr .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr .sub { color: var(--muted); font-size: 17px; }
+
+/* Nav */
+nav { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 2px solid var(--line); background: var(--bg); }
+nav button { min-height: 52px; padding: 10px 2px; background: none; border: 0; color: var(--muted); font: 400 9px/1.2 var(--f-display); letter-spacing: .05em; text-transform: uppercase; cursor: pointer; }
+nav button[aria-current="page"] { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
+
+/* Layer: sheets and dialogs */
+#layer:empty { display: none; }
+.overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; background: rgba(3,6,9,.82); }
+.overlay.mid { align-items: center; padding: 16px; }
+.sheet { width: 100%; max-width: 560px; max-height: 88%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 16px max(16px, env(safe-area-inset-left, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--panel); border-top: 3px solid var(--accent); }
+.overlay.mid .sheet { border: 3px solid var(--accent); padding-bottom: 16px; }
+#toast { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 30; max-width: 92vw; padding: 10px 14px; background: var(--panel-2); border: 2px solid var(--line); opacity: 0; pointer-events: none; transition: opacity .2s; }
+#toast.show { opacity: 1; }
+#toast.bad { border-color: var(--loss); color: var(--loss); }
+#toast.good { border-color: var(--gain); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="app">
+  <div class="hud">
+    <div class="cell"><span class="lbl">ГРИВНІ</span><span class="val money num" id="h-bal">—</span></div>
+    <div class="cell"><span class="lbl">CRYP</span><span class="val coin num" id="h-cryp">—</span></div>
+    <div class="rate num" id="h-rate">—</div>
+  </div>
+  <main id="main"></main>
+  <nav id="nav"></nav>
+</div>
+<div id="layer"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+
+/* ================= Конфіг: затверджені значення ================= */
+const CFG = {
+  models: [
+    { id: 'basic', name: 'PX-100', price: 25000,  power: 5000000 },   // 250 ₴  = 5 CRYP/хв
+    { id: 'mid',   name: 'PX-300', price: 250000, power: 12000000 },  // 2500 ₴ = 12 CRYP/хв
+    { id: 'pro',   name: 'PX-900', price: 450000, power: 18000000 },  // 4500 ₴ = 18 CRYP/хв
+  ],
+  startBal: 49000,       // 490 ₴ у копійках
+  size: 16, cols: 4,
+  sellPct: 50,
+  gapMs: 60000,          // правило 60 секунд
+  rMin: 0.25, rMax: 7, slotMs: 5000,
+  epoch: Date.UTC(2026, 10, 1),   // точка відліку спільного курсу
+};
+const M = Object.fromEntries(CFG.models.map((m) => [m.id, m]));
+const NICK_RE = /^[A-Za-z0-9_-]{3,20}$/;
+const LS_KEY = 'cryp_mining_save_v1';
+
+/* ================= Утиліти ================= */
+const $ = (s) => document.querySelector(s);
+function h(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v === true) e.setAttribute(k, '');
+    else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return e;
+}
+const kop = (v) => (v / 100).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₴';
+function cryp(micro, d = 6) {
+  const i = Math.floor(micro / 1e6);
+  const f = String(Math.floor(micro % 1e6)).padStart(6, '0').slice(0, d);
+  return i.toLocaleString('uk-UA') + '.' + f;
+}
+/** CRYP -> копійки за курсом, ціле, без похибок float (BigInt). */
+function toKop(micro, rate) {
+  return Number((BigInt(Math.floor(micro)) * BigInt(Math.round(rate * 10000)) + 50000000n) / 100000000n);
+}
+function parseCryp(s) {
+  s = String(s).trim().replace(',', '.');
+  if (!/^\d{1,12}(\.\d{1,6})?$/.test(s)) return null;
+  const [i, f = ''] = s.split('.');
+  return Number(BigInt(i) * 1000000n + BigInt(f.padEnd(6, '0')));
+}
+const perMin = (micro) => String(micro / 1e6);
+const sellGain = (id) => Math.floor((M[id].price * CFG.sellPct) / 100);
+let toastTimer = null;
+function toast(msg, kind) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'show ' + (kind || 'good');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ''; }, 2600);
+}
+
+/* ================= Спільний курс (однаковий для всіх гравців) =================
+   Курс — детермінована функція від часу: кожні 5 с один крок, випадковість береться
+   з хеша номера кроку. Усі гравці, що відкрили гру, бачать однаковий курс і графік. */
+function hash32(n) {
+  let x = (n ^ 0x9e3779b9) >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
+  x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
+  x ^= x >>> 16;
+  return x >>> 0;
+}
+const rnd = (slot, k) => hash32((slot * 4 + k) | 0) / 4294967296;
+const SLOT0 = Math.floor(CFG.epoch / CFG.slotMs);
+const HIST = 17280; // 24 години по 5 с
+const R = { rate: 1, prev: 1, dir: 1, left: 0, slot: SLOT0, ring: new Float32Array(HIST) };
+R.ring[SLOT0 % HIST] = 1;
+function stepRate() {
+  const slot = R.slot;
+  if (R.left <= 0) {
+    const p = Math.sqrt((R.rate - CFG.rMin) / (CFG.rMax - CFG.rMin)); // 0..1, нижче = більший шанс зростання
+    const pUp = Math.min(0.92, Math.max(0.08, 0.5 + (0.5 - p) * 0.8));
+    R.dir = rnd(slot, 0) < pUp ? 1 : -1;
+    R.left = 24 + Math.floor(rnd(slot, 1) * 96); // тренд 2–10 хвилин
+  }
+  let dir = R.dir;
+  let mag = 0.01 + rnd(slot, 2) * 0.02;            // крок 1–3%
+  if (rnd(slot, 3) < 0.15) { dir = -dir; mag = 0.01 + rnd(slot, 2) * 0.005; } // дрібна корекція проти тренду
+  let next = R.rate * (1 + dir * mag);
+  if (next >= CFG.rMax) { next = CFG.rMax; R.left = 0; }
+  else if (next <= CFG.rMin) { next = CFG.rMin; R.left = 0; }
+  else R.left -= 1;
+  R.prev = R.rate;
+  R.rate = Math.round(next * 10000) / 10000;
+}
+function advanceRate() {
+  const now = Math.floor(Date.now() / CFG.slotMs);
+  let moved = false;
+  while (R.slot < now) { R.slot += 1; stepRate(); R.ring[R.slot % HIST] = R.rate; moved = true; }
+  return moved;
+}
+function rateSeries(n, stride) {
+  const out = [];
+  for (let i = n - 1 - ((n - 1) % stride); i >= 0; i -= stride) {
+    const s = R.slot - i;
+    if (s >= SLOT0) out.push([s * CFG.slotMs, R.ring[s % HIST]]);
+  }
+  return out;
+}
+advanceRate();
+
+/* ================= Стан гравця ================= */
+function fresh() {
+  return { v: 1, nick: null, bal: CFG.startBal, cryp: 0, acc: 0, inv: { basic: 0, mid: 0, pro: 0 },
+           farm: new Array(CFG.size).fill(null), mining: false, last: Date.now(), savedAt: 0 };
+}
+function sanitize(o) {
+  if (!o || typeof o !== 'object') return null;
+  const ok = (n) => typeof n === 'number' && isFinite(n) && n >= 0;
+  if (!ok(o.bal) || !ok(o.cryp) || !Array.isArray(o.farm) || o.farm.length !== CFG.size || !o.inv) return null;
+  const s = fresh();
+  s.nick = typeof o.nick === 'string' && NICK_RE.test(o.nick) ? o.nick : null;
+  s.bal = Math.floor(o.bal); s.cryp = Math.floor(o.cryp); s.acc = ok(o.acc) ? o.acc : 0;
+  for (const id of Object.keys(M)) s.inv[id] = ok(o.inv[id]) ? Math.floor(o.inv[id]) : 0;
+  s.farm = o.farm.map((x) => (M[x] ? x : null));
+  s.mining = o.mining === true;
+  s.last = ok(o.last) ? o.last : Date.now();
+  s.savedAt = ok(o.savedAt) ? o.savedAt : 0;
+  return s;
+}
+function loadLocal() {
+  try { return sanitize(JSON.parse(localStorage.getItem(LS_KEY))); } catch (_) { return null; }
+}
+let S = loadLocal() || fresh();
+const installed = () => S.farm.reduce((n, m) => n + (m ? 1 : 0), 0);
+const totalCards = () => installed() + Object.values(S.inv).reduce((a, b) => a + b, 0);
+const farmPower = (farm) => farm.reduce((p, m) => p + (m ? M[m].power : 0), 0);
+const power = () => farmPower(S.farm);
+const miningOn = () => S.mining && installed() > 0;
+
+/* ================= Збереження і спільна база ================= */
+const me = { id: null };
+let saveDoc = null, saveReady = false, pubDoc = null;
+let dirty = false, saving = false, pubDirty = false, pubBusy = false, pubDenied = false;
+let storeNote = 'local';       // local | account
+let PODIUM = [], podiumStatus = 'off';
+function touch() { dirty = true; pubDirty = true; }
+
+async function persist() {
+  if (!dirty || saving) return;
+  saving = true; dirty = false;
+  S.savedAt = Date.now();
+  const snap = JSON.stringify(S);
+  try { localStorage.setItem(LS_KEY, snap); } catch (_) { /* приватний режим */ }
+  if (saveDoc && saveReady) {
+    try { await saveDoc.set(JSON.parse(snap)); } catch (_) { dirty = true; }
+  }
+  saving = false;
+}
+async function publishPodium() {
+  if (!pubDoc || !pubDirty || pubBusy || pubDenied || !S.nick) return;
+  pubBusy = true; pubDirty = false;
+  try { await pubDoc.set({ nick: S.nick, bal: S.bal, cryp: S.cryp, farm: S.farm, t: Date.now() }); }
+  catch (e) { if (e && e.code === 'invalid_argument') { pubDenied = true; if (tab === 'podium') render(); } else pubDirty = true; }
+  pubBusy = false;
+}
+function cleanEntry(id, d) {
+  if (!d || typeof d.nick !== 'string' || !NICK_RE.test(d.nick)) return null;
+  const ok = (n) => typeof n === 'number' && isFinite(n) && n >= 0;
+  if (!ok(d.bal) || !ok(d.cryp)) return null;
+  const farm = Array.isArray(d.farm) && d.farm.length === CFG.size ? d.farm.map((x) => (M[x] ? x : null)) : new Array(CFG.size).fill(null);
+  return { id, nick: d.nick, bal: Math.floor(d.bal), cryp: Math.floor(d.cryp), farm };
+}
+
+async function attachServices() {
+  const c = window.claude;
+  if (!c || !c.use) return;
+  try {
+    const [user, db] = await Promise.all([c.use('user'), c.use('db')]);
+    if (!db || !user) return;
+    const id = await user.id();
+    if (!id) return;
+    me.id = id;
+    saveDoc = db.doc('data/users/' + id + '/save');
+    pubDoc = db.doc('podium/' + id);
+    try {
+      const snap = await saveDoc.get();
+      if (snap.exists) {
+        const remote = sanitize(snap.data());
+        if (remote && remote.savedAt > S.savedAt) { S = remote; tick(); }
+      }
+      saveReady = true; storeNote = 'account';
+    } catch (_) { saveReady = false; }
+    touch();
+    podiumStatus = 'loading';
+    const slow = setTimeout(() => { if (podiumStatus === 'loading') { podiumStatus = 'slow'; if (tab === 'podium') render(); } }, 10000);
+    db.collection('podium').onSnapshot((snap) => {
+      clearTimeout(slow);
+      PODIUM = snap.docs.map((d) => cleanEntry(d.id, d.data())).filter(Boolean);
+      podiumStatus = 'ok';
+      if (tab === 'podium') render();
+    }, () => { clearTimeout(slow); podiumStatus = 'error'; if (tab === 'podium') render(); });
+    if (!S.nick) ensureNick(); else if (tab === 'data' || tab === 'podium') render();
+    else updateHud();
+  } catch (_) { /* гра працює локально */ }
+}
+
+/* ================= Дії гравця ================= */
+function fail(msg) { toast(msg, 'bad'); return false; }
+function buy(id) {
+  const m = M[id];
+  if (S.bal < m.price) return fail('Недостатньо гривень.');
+  S.bal -= m.price; S.inv[id] += 1; touch(); return true;
+}
+function sellCard(src, key) {
+  if (totalCards() <= 1) return fail('Останню відеокарту продати не можна.');
+  let id;
+  if (src === 'farm') { id = S.farm[key]; if (!id) return fail('Клітинка порожня.'); S.farm[key] = null; }
+  else { id = key; if (S.inv[id] < 1) return fail('Немає такої карти в інвентарі.'); S.inv[id] -= 1; }
+  S.bal += sellGain(id); touch();
+  toast('+' + kop(sellGain(id)));
+  return true;
+}
+function install(id, slot, replace) {
+  if (S.inv[id] < 1) return fail('Немає такої карти в інвентарі.');
+  const old = S.farm[slot];
+  if (old && !replace) return fail('Клітинка зайнята.');
+  if (old) S.inv[old] += 1;           // стара карта повертається в інвентар
+  S.inv[id] -= 1; S.farm[slot] = id; touch(); return true;
+}
+function uninstall(slot) {
+  const id = S.farm[slot]; if (!id) return false;
+  S.farm[slot] = null; S.inv[id] += 1;
+  if (installed() === 0) S.mining = false;
+  touch(); return true;
+}
+function moveCard(from, to) {
+  if (from === to || !S.farm[from]) return false;
+  const t = S.farm[from]; S.farm[from] = S.farm[to]; S.farm[to] = t; touch(); return true;
+}
+function setMining(on) {
+  if (on && installed() === 0) return fail('Спочатку встановіть відеокарту.');
+  S.mining = on; S.last = Date.now(); touch(); return true;
+}
+function sellCryp(amountStr, all) {
+  const micro = all ? Math.floor(S.cryp) : parseCryp(amountStr);
+  if (micro === null) return fail('Введіть кількість, наприклад 1.5 (до 6 знаків після коми).');
+  if (micro < 1) return fail('Мінімальний продаж — 0.000001 CRYP.');
+  if (micro > S.cryp) return fail('Недостатньо CRYP.');
+  const k = toKop(micro, R.rate);
+  if (k < 1) return fail('За таку кількість при поточному курсі нічого не нараховується. Збільште суму.');
+  S.cryp -= micro; S.bal += k; touch();
+  toast('Продано ' + cryp(micro) + ' CRYP → ' + kop(k));
+  return true;
+}
+function setNick(v) {
+  if (!NICK_RE.test(v)) return 'Нікнейм: 3–20 символів, латиниця, цифри, _ та -.';
+  const low = v.toLowerCase();
+  if (PODIUM.some((e) => e.id !== me.id && e.nick.toLowerCase() === low)) return 'Цей нікнейм вже зайнятий.';
+  S.nick = v; touch(); return null;
+}
+
+/* ================= Головний цикл ================= */
+function tick() {
+  const now = Date.now();
+  const gap = now - S.last;
+  S.last = now;
+  const p = power();
+  if (S.mining && p > 0 && gap > 0 && gap <= CFG.gapMs) {
+    S.acc += p * gap;                       // правило 60 с: перерва до хвилини зараховується
+    const c = Math.floor(S.acc / 60000);
+    S.acc -= c * 60000;
+    if (c > 0) { S.cryp += c; touch(); }
+  } else if (gap > CFG.gapMs) {
+    S.acc = 0;                              // довша відсутність не зараховується
+  }
+  if (advanceRate()) {
+    if (tab === 'exchange') updateExchange();
+    if (tab === 'podium') render();
+  }
+  updateHud();
+  if (tab === 'farm') drawFarm();
+}
+
+/* ================= Спрайти ================= */
+const MASK = [
+  '................',
+  '.oooooooooooooo.',
+  '.o############o.',
+  '.o#hhhhhhhhhh#o.',
+  '.o#hffhhhhffh#o.',
+  '.o#hffhhhhffh#o.',
+  '.o#hhhhhhhhhh#o.',
+  '.o###l######l#o.',
+  '.oooooooooooooo.',
+  '..cccccccccccc..',
+  '................',
+];
+const SKIN = {
+  basic: { body: '#3a4a5c', edge: '#1b232e', heat: '#56697f', fan: '#8fa4b8', led: '#4ad0ff', conn: '#c9a227' },
+  mid:   { body: '#2f5d46', edge: '#14261c', heat: '#47856a', fan: '#9be3bf', led: '#7dff9a', conn: '#c9a227' },
+  pro:   { body: '#6a3b78', edge: '#25122c', heat: '#8f56a1', fan: '#f0b8ff', led: '#ffd04a', conn: '#e8c24a' },
+};
+const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function drawSlot(canvas, model, frame, active) {
+  const ctx = canvas.getContext('2d');
+  const size = canvas.width;
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, size, size);
+  if (!model) return;
+  const px = Math.floor(size / 16);
+  const ox = Math.floor((size - px * 16) / 2);
+  const oy = Math.floor((size - px * MASK.length) / 2);
+  const st = SKIN[model];
+  const f = REDUCED ? 0 : frame;
+  for (let y = 0; y < MASK.length; y++) {
+    for (let x = 0; x < 16; x++) {
+      const ch = MASK[y][x];
+      if (ch === '.') continue;
+      let col = st.edge;
+      if (ch === '#') col = st.body;
+      else if (ch === 'h') col = st.heat;
+      else if (ch === 'c') col = st.conn;
+      else if (ch === 'l') col = active && f % 2 === 0 ? st.led : st.edge;
+      else if (ch === 'f') col = active && (x + y + f) % 2 === 0 ? st.heat : st.fan;
+      ctx.fillStyle = col;
+      ctx.fillRect(ox + x * px, oy + y * px, px, px);
+    }
+  }
+}
+function icon(model, size) {
+  const c = h('canvas', { width: size || 96, height: size || 96 });
+  drawSlot(c, model, 0, false);
+  return c;
+}
+
+/* ================= Екран ================= */
+let tab = 'farm', moveFrom = null, range = '1h', frame = 0;
+const TABS = [['farm', 'Ферма'], ['shop', 'Магазин'], ['exchange', 'Біржа'], ['podium', 'Подіум'], ['data', 'Дані']];
+
+function renderNav() {
+  $('#nav').replaceChildren(...TABS.map(([k, label]) =>
+    h('button', { 'data-tab': k, onclick: () => { tab = k; moveFrom = null; render(); } }, label)));
+}
+function updateHud() {
+  $('#h-bal').textContent = kop(S.bal);
+  $('#h-cryp').textContent = cryp(S.cryp, 4);
+  const r = $('#h-rate');
+  r.textContent = '1 CRYP = ' + R.rate.toFixed(4) + ' ₴';
+  r.className = 'rate num ' + (R.rate >= R.prev ? 'up' : 'down');
+}
+function render() {
+  document.querySelectorAll('#nav button').forEach((b) => {
+    if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  const main = $('#main');
+  const top = main.scrollTop;
+  const view = { farm: viewFarm, shop: viewShop, exchange: viewExchange, podium: viewPodium, data: viewData }[tab]();
+  main.replaceChildren(...view.filter(Boolean));
+  main.scrollTop = top;
+  updateHud();
+  if (tab === 'farm') drawFarm();
+  if (tab === 'exchange') updateExchange();
+}
+const act = (fn) => { if (fn()) { persist(); } render(); };
+
+/* ----- Модальні ----- */
+function openLayer(content, mid) {
+  closeLayer();
+  const o = h('div', { class: 'overlay' + (mid ? ' mid' : ''), id: 'ov' }, content);
+  o.addEventListener('click', (e) => { if (e.target === o) closeLayer(); });
+  $('#layer').append(o);
+}
+function closeLayer() { $('#layer').replaceChildren(); }
+function sheet(title, ...kids) {
+  return h('div', { class: 'sheet' }, title ? h('h2', {}, title) : null, ...kids,
+    h('button', { class: 'btn', onclick: closeLayer }, 'Закрити'));
+}
+
+/* ----- Ферма ----- */
+function viewFarm() {
+  const rack = h('div', { class: 'rack', id: 'rack' });
+  S.farm.forEach((id, i) => {
+    const cls = ['slot'];
+    if (!id) cls.push('empty');
+    if (moveFrom !== null && moveFrom !== i) cls.push('target');
+    if (moveFrom === i) cls.push('picked');
+    if (id && miningOn()) cls.push('on');
+    rack.append(h('button', { class: cls.join(' '), 'data-i': i, 'aria-label': 'Клітинка ' + (i + 1), onclick: () => onSlot(i) },
+      h('canvas', { width: 96, height: 96 }), h('span', { class: 'idx' }, i + 1)));
+  });
+  const on = miningOn();
+  const inv = Object.entries(S.inv).filter(([, n]) => n > 0);
+  return [
+    h('div', { class: 'panel' },
+      h('div', { class: 'row between' },
+        h('span', { class: 'state ' + (on ? 'on' : 'off') }, on ? 'ПРАЦЮЄ' : 'ЗУПИНЕНО'),
+        h('span', { class: 'num' }, 'Потужність: ' + perMin(power()) + ' CRYP/хв')),
+      moveFrom !== null ? h('div', { class: 'row between' }, h('span', {}, 'Оберіть клітинку, куди перемістити'),
+        h('button', { class: 'btn', onclick: () => { moveFrom = null; render(); } }, 'Скасувати')) : null,
+      rack,
+      h('button', { class: 'btn wide ' + (S.mining ? 'stop' : 'go'), disabled: !S.mining && installed() === 0,
+        onclick: () => act(() => setMining(!S.mining)) }, S.mining ? 'Зупинити майнінг' : 'Запустити майнінг'),
+      totalCards() === 0 ? h('div', { class: 'row between' }, h('span', {}, 'У вас ще немає відеокарт. Купіть першу в магазині.'),
+        h('button', { class: 'btn primary', onclick: () => { tab = 'shop'; render(); } }, 'До магазину')) : null,
+      h('div', { class: 'muted' }, 'Якщо закрити гру довше ніж на 60 секунд, майнінг за цей час не нараховується.')),
+    h('div', { class: 'panel' }, h('h3', {}, 'Інвентар'),
+      inv.length === 0 ? h('div', { class: 'muted' }, 'Порожньо. Куплені, але не встановлені карти будуть тут.')
+        : h('div', { class: 'inv' }, inv.map(([id, n]) => h('div', { class: 'inv-item' }, icon(id, 56), h('div', {}, M[id].name), h('div', { class: 'muted num' }, '×' + n))))),
+  ];
+}
+function drawFarm() {
+  frame += 1;
+  const on = miningOn();
+  document.querySelectorAll('#rack .slot').forEach((b) => {
+    const i = Number(b.dataset.i);
+    drawSlot(b.firstChild, S.farm[i], frame + i, on);
+  });
+}
+function onSlot(i) {
+  if (moveFrom !== null) {
+    const from = moveFrom; moveFrom = null;
+    if (from !== i) act(() => moveCard(from, i)); else render();
+    return;
+  }
+  const id = S.farm[i];
+  const others = Object.entries(S.inv).filter(([m, n]) => n > 0 && m !== id);
+  const pick = (label, replace) => others.length === 0 ? null : h('div', { class: 'panel' }, h('h3', {}, label),
+    ...others.map(([m, n]) => h('button', { class: 'btn', onclick: () => { closeLayer(); act(() => install(m, i, replace)); } }, M[m].name + ' ×' + n)));
+  const body = [];
+  if (!id) {
+    body.push(pick('Оберіть відеокарту з інвентаря', false) || h('p', { class: 'muted' }, 'В інвентарі немає карт. Купіть їх у магазині.'));
+  } else {
+    body.push(
+      pick('Замінити на іншу (стара піде в інвентар)', true),
+      h('button', { class: 'btn', onclick: () => { closeLayer(); act(() => uninstall(i)); } }, 'Зняти в інвентар'),
+      h('button', { class: 'btn', onclick: () => { closeLayer(); moveFrom = i; render(); } }, 'Перемістити'),
+      h('button', { class: 'btn stop', onclick: () => confirmSell('farm', i, id) }, 'Продати за ' + kop(sellGain(id))));
+  }
+  openLayer(sheet('Клітинка ' + (i + 1) + (id ? ' · ' + M[id].name : ''), ...body));
+}
+function confirmSell(src, key, id) {
+  openLayer(h('div', { class: 'sheet' },
+    h('h2', {}, 'Продати карту?'),
+    h('p', {}, M[id].name + ' → ' + kop(sellGain(id)) + ' (50% початкової ціни)'),
+    h('button', { class: 'btn stop', onclick: () => { closeLayer(); act(() => sellCard(src, key)); } }, 'Продати'),
+    h('button', { class: 'btn', onclick: closeLayer }, 'Скасувати')), true);
+}
+
+/* ----- Магазин ----- */
+function viewShop() {
+  return [h('h2', {}, 'Магазин'), ...CFG.models.map((m) => {
+    const onFarm = S.farm.filter((x) => x === m.id).length;
+    return h('div', { class: 'panel item' },
+      icon(m.id, 72),
+      h('div', {},
+        h('div', { class: 'name' }, m.name),
+        h('div', { class: 'num' }, perMin(m.power) + ' CRYP/хв'),
+        h('div', { class: 'num' }, 'Ціна: ' + kop(m.price)),
+        h('div', { class: 'muted' }, 'На фермі: ' + onFarm + ' · в інвентарі: ' + S.inv[m.id])),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn primary', disabled: S.bal < m.price, onclick: () => { if (buy(m.id)) { persist(); toast(m.name + ' куплено'); } render(); } }, 'Купити'),
+        h('button', { class: 'btn', disabled: S.inv[m.id] < 1, onclick: () => confirmSell('inv', m.id, m.id) }, 'Продати ' + kop(sellGain(m.id)))));
+  })];
+}
+
+/* ----- Біржа ----- */
+function viewExchange() {
+  const input = h('input', { class: 'field num', id: 'amt', inputmode: 'decimal', autocomplete: 'off', placeholder: 'Кількість CRYP' });
+  const prev = h('div', { class: 'muted num', id: 'amt-prev' }, ' ');
+  input.addEventListener('input', () => {
+    const v = parseFloat(String(input.value).replace(',', '.'));
+    prev.textContent = isFinite(v) && v > 0 ? 'Ви отримаєте приблизно ' + kop(Math.round(v * R.rate * 100)) : ' ';
+  });
+  return [
+    h('div', { class: 'panel' },
+      h('div', { class: 'row between' }, h('h2', {}, 'Біржа'),
+        h('div', { class: 'seg' }, [['1h', '1 год'], ['24h', '24 год']].map(([r, l]) =>
+          h('button', { class: 'btn', 'aria-pressed': String(range === r), onclick: () => { range = r; render(); } }, l)))),
+      h('div', { class: 'big num', id: 'big-rate' }, ' '),
+      h('div', { class: 'chart' }, h('canvas', { id: 'chart' })),
+      h('div', { class: 'muted' }, 'Курс однаковий для всіх гравців і змінюється кожні 5 секунд.')),
+    h('div', { class: 'panel' }, h('h3', {}, 'Продати CRYP'),
+      h('div', { class: 'num' }, 'У вас: ' + cryp(S.cryp) + ' CRYP'),
+      input, prev,
+      h('div', { class: 'row' },
+        h('button', { class: 'btn gold grow', onclick: () => act(() => { const ok = sellCryp(input.value, false); if (ok) input.value = ''; return ok; }) }, 'Продати'),
+        h('button', { class: 'btn', onclick: () => act(() => sellCryp('', true)) }, 'Усе')),
+      h('div', { class: 'muted' }, 'Продаж за курсом у момент підтвердження. Комісії немає. Купити CRYP не можна, його лише видобувають.')),
+  ];
+}
+function updateExchange() {
+  const b = $('#big-rate');
+  if (!b) return;
+  b.textContent = R.rate.toFixed(4) + ' ₴';
+  b.style.color = R.rate >= R.prev ? 'var(--gain)' : 'var(--loss)';
+  drawChart();
+}
+function drawChart() {
+  const c = $('#chart');
+  if (!c) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, hgt = c.clientHeight;
+  if (!w || !hgt) return;
+  c.width = w * dpr; c.height = hgt * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const pts = range === '24h' ? rateSeries(HIST, 60) : rateSeries(720, 1);
+  if (pts.length < 2) return;
+  const vals = pts.map((p) => p[1]);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi - lo) * 0.12 || 0.05;
+  lo = Math.max(CFG.rMin, lo - pad); hi = Math.min(CFG.rMax, hi + pad);   // вісь не виходить за межі курсу 0.25–7
+  const L = 46, B = 6, T = 8, Rr = 8;
+  const X = (i) => L + (i / (pts.length - 1)) * (w - L - Rr);
+  const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (hgt - T - B);
+  ctx.font = '15px VT323, monospace';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const v = lo + ((hi - lo) * i) / 3, y = Math.round(Y(v)) + 0.5;
+    ctx.strokeStyle = '#1d2833'; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - Rr, y); ctx.stroke();
+    ctx.fillStyle = '#8798a9'; ctx.fillText(v.toFixed(2), 2, y + 4);
+  }
+  ctx.beginPath();
+  pts.forEach((p, i) => (i ? ctx.lineTo(X(i), Y(p[1])) : ctx.moveTo(X(i), Y(p[1]))));
+  ctx.strokeStyle = '#4ad0ff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.lineTo(X(pts.length - 1), hgt - B); ctx.lineTo(X(0), hgt - B); ctx.closePath();
+  ctx.fillStyle = 'rgba(74,208,255,.10)'; ctx.fill();
+  const last = pts[pts.length - 1];
+  ctx.fillStyle = '#ffd04a'; ctx.fillRect(X(pts.length - 1) - 3, Y(last[1]) - 3, 6, 6);
+}
+window.addEventListener('resize', () => { if (tab === 'exchange') drawChart(); });
+
+/* ----- Подіум ----- */
+function podiumRows() {
+  const map = new Map(PODIUM.map((e) => [e.id, e]));
+  if (S.nick) map.set(me.id || 'local', { id: me.id || 'local', nick: S.nick, bal: S.bal, cryp: S.cryp, farm: S.farm });
+  return [...map.values()]
+    .map((e) => ({ ...e, k: e.bal + toKop(e.cryp, R.rate) }))
+    .sort((a, b) => b.k - a.k || (a.id < b.id ? -1 : 1))
+    .map((e, i) => ({ ...e, rank: i + 1 }));
+}
+function viewPodium() {
+  const rows = podiumRows();
+  const mine = rows.find((r) => r.id === (me.id || 'local'));
+  const row = (r) => h('button', { class: 'tr r' + r.rank + (r.id === (me.id || 'local') ? ' me' : ''), onclick: () => openProfile(r) },
+    h('span', { class: 'rk num' }, '#' + r.rank),
+    h('div', {}, h('div', { class: 'nm' }, r.nick), h('div', { class: 'sub num' }, kop(r.bal))),
+    h('div', { class: 'num' }, kop(r.k)));
+  let note = null;
+  if (podiumStatus === 'off') note = 'Спільний рейтинг недоступний у цьому вікні: ви бачите лише себе.';
+  else if (podiumStatus === 'loading') note = 'Завантажуємо гравців…';
+  else if (podiumStatus === 'slow') note = 'Рейтинг поки не відповідає. Дані можуть бути застарілими.';
+  else if (podiumStatus === 'error') note = 'Не вдалося завантажити рейтинг.';
+  else if (pubDenied) note = 'Ваш результат не потрапляє в спільний рейтинг: для цього потрібен доступ Contributor.';
+  return [
+    h('h2', {}, 'Подіум'),
+    note ? h('div', { class: 'muted' }, note) : null,
+    h('div', { class: 'muted' }, 'Топ-10 за загальним капіталом'),
+    h('div', { class: 'table' }, rows.length ? rows.slice(0, 10).map(row) : h('div', { class: 'muted' }, 'У рейтингу поки нікого немає.')),
+    mine && mine.rank > 10 ? h('div', { class: 'panel' }, h('h3', {}, 'Ваша позиція'), row(mine)) : null,
+    h('div', { class: 'muted' }, 'Капітал = ₴ + CRYP × поточний курс. Обладнання не враховується. Рейтинг оновлюється наживо.'),
+  ];
+}
+function openProfile(r) {
+  const rack = h('div', { class: 'rack' }, r.farm.map((m) => {
+    const c = h('canvas', { width: 96, height: 96 });
+    drawSlot(c, m, 0, false);
+    return h('div', { class: 'slot' }, c);
+  }));
+  const line = (k, v) => h('div', { class: 'row between' }, h('span', { class: 'muted' }, k), h('span', { class: 'num' }, v));
+  openLayer(sheet(r.nick,
+    line('Капітал', kop(r.k) + ' · #' + r.rank),
+    line('Гривні', kop(r.bal)),
+    line('CRYP', cryp(r.cryp)),
+    line('Встановлено карт', String(r.farm.filter(Boolean).length)),
+    line('Потужність ферми', perMin(farmPower(r.farm)) + ' CRYP/хв'),
+    rack));
+}
+
+/* ----- Особисті дані ----- */
+function viewData() {
+  return [
+    h('h2', {}, 'Особисті дані'),
+    h('div', { class: 'panel' },
+      h('div', { class: 'row between' }, h('span', {}, 'Нікнейм: ' + (S.nick || '—')),
+        h('button', { class: 'btn', onclick: () => ensureNick(true) }, 'Змінити')),
+      h('div', { class: 'muted' }, storeNote === 'account'
+        ? 'Прогрес зберігається у вашому акаунті й доступний з будь-якого пристрою.'
+        : 'Прогрес зберігається лише в цьому браузері: акаунт недоступний у цьому вікні.')),
+    h('div', { class: 'panel' }, h('h3', {}, 'Про цю версію'),
+      h('div', { class: 'muted' }, 'Це перша версія для гри та перевірки задуму. Розрахунки виконує браузер, тому вона не захищена від підробки результатів. У наступних версіях усю економіку перенесе сервер.')),
+  ];
+}
+function ensureNick(changing) {
+  if (!changing && S.nick) return;
+  const input = h('input', { class: 'field', id: 'nick', maxlength: 20, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: 'Ваш нікнейм', value: changing && S.nick ? S.nick : '' });
+  const err = h('div', { class: 'err' });
+  const save = () => {
+    const e = setNick(input.value.trim());
+    if (e) { err.textContent = e; return; }
+    persist(); closeLayer(); render();
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  openLayer(h('div', { class: 'sheet' },
+    h('h2', {}, changing ? 'Змінити нікнейм' : 'Оберіть нікнейм'),
+    h('p', { class: 'muted' }, '3–20 символів: латиниця, цифри, _ та -. Його бачитимуть усі гравці в Подіумі.'),
+    input, err,
+    h('button', { class: 'btn primary', onclick: save }, 'Зберегти'),
+    changing ? h('button', { class: 'btn', onclick: closeLayer }, 'Скасувати') : null), true);
+  input.focus();
+}
+
+/* ================= Запуск ================= */
+renderNav();
+render();
+if (!S.nick) ensureNick();
+setInterval(tick, 500);
+setInterval(persist, 6000);
+setInterval(publishPodium, 15000);
+document.addEventListener('visibilitychange', () => { tick(); if (document.hidden) persist(); });
+window.addEventListener('pagehide', persist);
+attachServices();
+</script>
