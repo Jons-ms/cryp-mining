@@ -20,7 +20,7 @@ let frame = 0;
 let hbTimer = null;
 let sse = null;
 let moveFrom = null;     // режим переміщення карти
-let chartRange = '1h';
+const chartRange = '1h';
 
 // ---------- утиліти ----------
 const el = (tag, props = {}, ...kids) => {
@@ -410,8 +410,7 @@ function viewExchange() {
   };
   return [
     el('div', { class: 'panel' },
-      el('div', { class: 'row between' }, el('h2', {}, t('ex.title')),
-        el('div', { class: 'seg' }, ['1h', '24h'].map((r) => el('button', { class: 'btn', 'aria-pressed': String(chartRange === r), onclick: () => { chartRange = r; renderTab(); } }, t(`ex.range${r}`))))),
+      el('h2', {}, t('ex.title')),
       el('div', { class: 'big-rate num', id: 'big-rate' }, `${fmtRate(rate.rate)} ₴`),
       el('div', { class: 'chart-wrap' }, el('canvas', { id: 'chart' }))),
     el('div', { class: 'panel' },
@@ -450,7 +449,7 @@ function drawChart() {
   const ctx = c.getContext('2d');
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
-  const span = chartRange === '24h' ? 24 * 3600e3 : 3600e3;
+  const span = 3600e3;
   const now = Date.now();
   const pts = chartPoints.filter((p) => p[0] >= now - span);
   if (pts.length < 2) return;
